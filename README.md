@@ -10,3 +10,9 @@ from src.calc import add, divide
 add(2, 3)       # 5
 divide(10, 4)   # 2.5
 ```
+
+## 테스트 실행
+
+```bash
+python3 -m unittest discover -s tests -t .
+```
