@@ -1,7 +1,7 @@
 """AI 데이터센터 숏폼 조립 스크립트 (1080x1920, 30fps).
 
 사용: python3 build.py  →  build/final.mp4
-입력: script.json(대사/자막), assets/audio/*.wav(TTS), assets/clips/*.mp4(Pexels)
+입력: script.json(대사/자막), assets/audio/*.wav(TTS), assets/clips/*.mp4(Pexels), assets/music/*.mp3
 """
 import json, subprocess, pathlib
 
@@ -14,9 +14,9 @@ W, H, FPS = 1080, 1920, 30
 GAP = 0.3                     # 문장 사이 쉼
 GAP_AFTER = {"s1": 0.55}      # 훅 뒤엔 조금 더 길게
 
-# 장면별 클립: (파일, 원본 시작초, 비율) — 비율 합이 1이 되도록 장면 길이를 나눔
+# 장면별 클립: (파일, 원본 시작초, 비율[, 가로 크롭 위치]) — 비율 합이 1이 되도록 장면 길이를 나눔
 SCENES = {
-    "s1":  [("glitch", 0.0, 0.08), ("vote_drop", 1.5, 0.92)],
+    "s1":  [("glitch", 0.0, 0.08), ("vote_people", 0.5, 0.92, 0.2)],
     "s2":  [("ballot_boxes", 1.0, 0.45), ("server", 3.0, 0.55)],
     "s3":  [("people_voting", 2.0, 1.0)],
     "s4":  [("phone_typing", 0.5, 0.45), ("water_drops", 2.0, 0.55)],
@@ -31,11 +31,15 @@ SCENES = {
 SOURCE = {
     "s2": "출처: CNBC · Ballotpedia (2026.11)",
     "s3": "출처: CNBC · Ballotpedia (2026.11)",
-    "s4": "출처: Google (2025), Gemini 텍스트 프롬프트 중앙값 0.26mL",
+    "s4": "출처: Google (2025), Gemini 텍스트 질문 1회 중앙값 0.26mL",
     "s7": "출처: 미국 로런스버클리국립연구소 (2024), 2023년 기준",
     "s8": "출처: 미국 로런스버클리국립연구소 (2024), 6.7~12% 전망",
 }
 HEADER = "이거 알고 계셨나요?"
+# 배경음악: "Investigations" Kevin MacLeod (incompetech.com), CC BY 4.0 — 영상 설명란에 출처 표기 필요
+MUSIC = ROOT / "assets/music/Investigations.mp3"
+MUSIC_START = 0.0
+MUSIC_VOL = 0.30  # 내레이션보다 약 14dB 작게
 
 
 def run(cmd):
@@ -60,27 +64,28 @@ def caption_filters(sid, cap):
     n = len(lines); base_y = 1180 - (n - 1) * 70
     for i, line in enumerate(lines):
         color = "white" if (i == 0 and n > 1) else "0xFFD600"
-        size = 84 if (i == 0 and n > 1) else 112
+        size = 84 if (i == 0 and n > 1) else (112 if len(line) <= 10 else 90)  # 긴 줄은 작게
         y = base_y + i * 150 - (20 if i == 0 and n > 1 else 0)
         f.append(f"drawtext=expansion=none:fontfile={esc(FONT)}:textfile={textfile(f'{sid}_{i}', line)}:fontsize={size}:"
                  f"fontcolor={color}:borderw=9:bordercolor=black:shadowx=0:shadowy=6:shadowcolor=black@0.6:"
                  f"x=(w-tw)/2:y={y}+12*max(0\\,1-t/0.18):alpha='min(1,t/0.18)'")
     if sid in SOURCE:
         f.append(f"drawtext=expansion=none:fontfile={esc(FONT_M)}:textfile={textfile(sid + '_src', SOURCE[sid])}:fontsize=30:"
-                 f"fontcolor=white@0.75:x=(w-tw)/2:y=1600")
+                 f"fontcolor=white@0.75:x=(w-tw)/2:y=1470")
     return f
 
 
 def render_scene(sid, cap, dur):
     parts = SCENES[sid]
     inputs, chains = [], []
-    for k, (name, ss, frac) in enumerate(parts):
+    for k, (name, ss, frac, *opt) in enumerate(parts):
+        ax = opt[0] if opt else 0.5   # 가로 크롭 위치 (0=왼쪽, 0.5=가운데, 1=오른쪽)
         d = dur * frac
         inputs += ["-ss", str(ss), "-t", f"{d + 0.1:.3f}", "-i", str(CLIPS / f"{name}.mp4")]
         # 화면 꽉 채우기(9:16 크롭) + 천천히 줌인
         chains.append(
             f"[{k}:v]fps={FPS},scale={int(W*1.15)}:{int(H*1.15)}:force_original_aspect_ratio=increase,"
-            f"crop={int(W*1.15)}:{int(H*1.15)},"
+            f"crop={int(W*1.15)}:{int(H*1.15)}:x=(iw-ow)*{ax}:y=(ih-oh)/2,"
             f"scale=w='{W}*(1.12-0.08*t/{d:.3f})':h=-2:eval=frame,"   # 줌인 효과
             f"crop={W}:{H},setsar=1,trim=duration={d:.3f},setpts=PTS-STARTPTS[c{k}]")
     cat = "".join(f"[c{k}]" for k in range(len(parts)))
@@ -114,28 +119,19 @@ def main():
         fc.append(f"[{k}:a]aresample=48000,apad,atrim=duration={dur:.3f}[a{k}]")
     fc.append("".join(f"[a{k}]" for k in range(len(voice_parts))) +
               f"concat=n={len(voice_parts)}:v=0:a=1,highpass=f=90,"
-              "acompressor=threshold=-20dB:ratio=3:attack=5:release=80,aformat=channel_layouts=stereo[voice]")
+              "acompressor=threshold=-20dB:ratio=3:attack=5:release=80,loudnorm=I=-16:TP=-2,aresample=48000,aformat=channel_layouts=stereo[voice]")
     run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", ";".join(fc), "-map", "[voice]", str(B / "voice.wav")])
-    # 3) 배경음: 낮은 긴장감 베이스 펄스 + 장면 전환 '휙' 효과음 (직접 합성, 저작권 걱정 없음)
-    bed = (f"aevalsrc='0.35*sin(2*PI*55*t)*(0.55+0.45*sin(2*PI*1.6*t))+0.12*sin(2*PI*110*t)*(0.5+0.5*sin(2*PI*0.8*t))'"
-           f":s=48000:d={total:.3f}")
-    whoosh_in, whoosh_fc = [], []
-    for k, st in enumerate(starts[1:]):
-        whoosh_in += ["-f", "lavfi", "-t", "0.45", "-i", "anoisesrc=color=pink:amplitude=0.5:r=48000"]
-        ms = int(max(0, st - 0.2) * 1000)
-        whoosh_fc.append(f"[{k+2}:a]bandpass=f=1800:width_type=h:w=2500,afade=t=in:d=0.25,afade=t=out:st=0.25:d=0.2,"
-                         f"volume=0.35,adelay={ms}|{ms},apad[w{k}]")
-    # 첫 장면 임팩트 '쿵'
+    # 3) 배경음악 + 첫 장면 '쿵' 한 번 (장면 전환 효과음은 없음)
+    #    내레이션이 나올 때 음악이 자동으로 작아짐(사이드체인 더킹)
     hit = "aevalsrc='0.9*sin(2*PI*(60-30*t)*t)*exp(-4*t)':s=48000:d=1.2"
-    n_w = len(starts) - 1
-    fc = (f"[0:a]volume=0.22,aformat=channel_layouts=stereo,afade=t=in:d=0.3,afade=t=out:st={total-1.5:.3f}:d=1.5[bed];"
-          f"[1:a]aformat=channel_layouts=stereo[hit];" + ";".join(whoosh_fc) + ";"
-          f"[bed][hit]{''.join(f'[w{k}]' for k in range(n_w))}amix=inputs={2+n_w}:normalize=0,"
-          f"atrim=duration={total:.3f},aformat=channel_layouts=stereo[music];"
-          f"[{2+n_w}:a]asplit=2[vo][sc];"
-          f"[music][sc]sidechaincompress=threshold=0.05:ratio=6:attack=20:release=300[duck];"
+    fc = (f"[0:a]aresample=48000,aformat=channel_layouts=stereo,volume={MUSIC_VOL},"
+          f"atrim=duration={total:.3f},afade=t=in:d=0.2,afade=t=out:st={total-2:.3f}:d=2[bgm];"
+          f"[1:a]aformat=channel_layouts=stereo,volume=0.7[hit];"
+          f"[bgm][hit]amix=inputs=2:normalize=0[music];"
+          f"[2:a]asplit=2[vo][sc];"
+          f"[music][sc]sidechaincompress=threshold=0.04:ratio=4:attack=30:release=400[duck];"
           f"[duck][vo]amix=inputs=2:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[out]")
-    run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", bed, "-f", "lavfi", "-i", hit, *whoosh_in,
+    run(["ffmpeg", "-v", "error", "-y", "-ss", str(MUSIC_START), "-i", str(MUSIC), "-f", "lavfi", "-i", hit,
          "-i", str(B / "voice.wav"), "-filter_complex", fc, "-map", "[out]", "-ar", "48000", str(B / "mix.wav")])
     # 4) 합치기
     run(["ffmpeg", "-v", "error", "-y", "-i", str(B / "video.mp4"), "-i", str(B / "mix.wav"),

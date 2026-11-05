@@ -2,3 +2,4 @@ assets/clips/*.mp4
 assets/audio/*.wav
 build/
 test_v*.mp4
+assets/music/*.mp3

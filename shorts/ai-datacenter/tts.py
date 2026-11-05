@@ -1,11 +1,26 @@
-import json, torch, soundfile as sf, uroman as ur, numpy as np, sys
-from transformers import VitsModel, AutoTokenizer
-torch.manual_seed(7)
-m=VitsModel.from_pretrained("facebook/mms-tts-kor"); t=AutoTokenizer.from_pretrained("facebook/mms-tts-kor"); r=ur.Uroman()
-m.speaking_rate=float(sys.argv[1]) if len(sys.argv)>1 else 1.1; m.noise_scale=0.6
-sr=m.config.sampling_rate; out={}
-for s in json.load(open("script.json")):
-    txt=s["say"].replace("AI","에이아이")
-    with torch.no_grad(): w=m(**t(r.romanize_string(txt),return_tensors="pt")).waveform[0].numpy()
-    sf.write(f"assets/audio/{s['id']}.wav",w,sr); out[s["id"]]=len(w)/sr
-json.dump(out,open("assets/audio/durations.json","w"),indent=1); print(out, sum(out.values()))
+"""Edge TTS로 문장별 내레이션 생성 → assets/audio/{id}.wav + durations.json
+사용: python tts.py [voice] [rate]   예) python tts.py ko-KR-InJoonNeural +8%
+"""
+import asyncio, json, os, subprocess, sys, edge_tts
+VOICE = sys.argv[1] if len(sys.argv) > 1 else "ko-KR-InJoonNeural"
+RATE = sys.argv[2] if len(sys.argv) > 2 else "+8%"
+PROXY = os.environ.get("HTTPS_PROXY")  # 클라우드 환경에선 프록시 필요
+
+async def main():
+    dur = {}
+    for s in json.load(open("script.json")):
+        mp3, wav = f"assets/audio/{s['id']}.mp3", f"assets/audio/{s['id']}.wav"
+        await edge_tts.Communicate(s["say"], VOICE, rate=RATE, proxy=PROXY).save(mp3)
+        # 앞뒤 무음 제거 후 48kHz wav로 변환
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", mp3, "-af",
+                        "silenceremove=start_periods=1:start_threshold=-50dB,areverse,"
+                        "silenceremove=start_periods=1:start_threshold=-50dB,areverse",
+                        "-ar", "48000", wav], check=True)
+        os.remove(mp3)
+        d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", wav],
+                                 capture_output=True, text=True).stdout)
+        dur[s["id"]] = round(d, 3); print(s["id"], dur[s["id"]])
+    json.dump(dur, open("assets/audio/durations.json", "w"), indent=1)
+    print("total", round(sum(dur.values()), 2))
+
+asyncio.run(main())
