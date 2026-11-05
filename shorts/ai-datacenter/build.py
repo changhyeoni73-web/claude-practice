@@ -25,7 +25,7 @@ SUB_MAX = 16                        # 자막 한 덩어리 최대 글자 수(공
 
 # 배경음악: "Investigations" Kevin MacLeod (incompetech.com), CC BY 4.0 — 영상 설명란에 출처 표기 필요
 MUSIC = ROOT / "assets/music/Investigations.mp3"
-MUSIC_VOL = 0.28
+MUSIC_VOL = 0.50
 
 # 장면별 클립: (파일, 원본 시작초, 비율[, 가로 크롭 위치 0~1])
 SCENES = {
@@ -147,7 +147,7 @@ def main():
     # 4) 배경음악 (내레이션 나올 때 자동으로 작아짐) + 최종 음량 -14 LUFS
     fc = (f"[0:a]aresample=48000,aformat=channel_layouts=stereo,volume={MUSIC_VOL},atrim=duration={total:.3f},"
           f"afade=t=in:d=0.3,afade=t=out:st={total - 2:.3f}:d=2[bgm];"
-          f"[1:a]asplit=2[vo][sc];[bgm][sc]sidechaincompress=threshold=0.04:ratio=4:attack=30:release=400[duck];"
+          f"[1:a]asplit=2[vo][sc];[bgm][sc]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=400[duck];"
           f"[duck][vo]amix=inputs=2:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[out]")
     run(["ffmpeg", "-v", "error", "-y", "-i", str(MUSIC), "-i", str(B / "voice.wav"),
          "-filter_complex", fc, "-map", "[out]", "-ar", "48000", str(B / "mix.wav")])
