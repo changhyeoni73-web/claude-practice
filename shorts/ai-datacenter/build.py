@@ -38,7 +38,7 @@ SCENES = {
     "s7":  [("city_night", 0.3, 0.55), ("server", 15.0, 0.45)],
     "s8":  [("steam_plant", 4.0, 0.5), ("transmission", 6.0, 0.5)],
     "s9":  [("dry_lake", 5.0, 0.5), ("protest", 10.0, 0.5)],
-    "s10": [("phone_neon", 1.0, 1.0)],
+    "s10": [("phone_thinking", 6.0, 1.0)],
 }
 
 
