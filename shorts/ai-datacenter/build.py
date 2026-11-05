@@ -26,6 +26,7 @@ SUB_MAX = 16                        # 자막 한 덩어리 최대 글자 수(공
 # 배경음악: "Investigations" Kevin MacLeod (incompetech.com), CC BY 4.0 — 영상 설명란에 출처 표기 필요
 MUSIC = ROOT / "assets/music/Investigations.mp3"
 MUSIC_VOL = 0.50
+INTRO = 1.0                         # 맨 앞 썸네일 화면 길이(초). 0이면 썸네일 없음 (thumbnail.py가 build/thumbnail.png 생성)
 
 # 장면별 클립: (파일, 원본 시작초, 비율[, 가로 크롭 위치 0~1])
 SCENES = {
@@ -132,7 +133,21 @@ def main():
                  f"fontsize=54:fontcolor=white:borderw=3:bordercolor=black@0.8:x=(w-tw)/2:y={SUB_Y}:"
                  f"enable='between(t,{a:.3f},{b:.3f})'")
     run(["ffmpeg", "-v", "error", "-y", "-i", str(B / "band_all.mp4"), "-vf", ",".join(f),
-         "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", str(B / "video.mp4")])
+         "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", str(B / "video_main.mp4")])
+
+    # 2-1) 맨 앞에 썸네일 화면 붙이기
+    if INTRO > 0:
+        if not (B / "thumbnail.png").exists():
+            raise SystemExit("build/thumbnail.png 없음: 먼저 python thumbnail.py 실행")
+        run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", str(FPS), "-t", f"{INTRO:.3f}",
+             "-i", str(B / "thumbnail.png"), "-vf", f"scale={W}:{H},setsar=1,format=yuv420p",
+             "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-r", str(FPS), str(B / "intro.mp4")])
+        run(["ffmpeg", "-v", "error", "-y", "-i", str(B / "intro.mp4"), "-i", str(B / "video_main.mp4"),
+             "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]",
+             "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", str(B / "video.mp4")])
+    else:
+        (B / "video_main.mp4").replace(B / "video.mp4")
+    total += INTRO
 
     # 3) 내레이션: 문장 + 쉼 이어붙이기, 음량 정리
     ins, fc = [], []
@@ -141,7 +156,7 @@ def main():
         fc.append(f"[{k}:a]aresample=48000,apad,atrim=duration={dur:.3f}[a{k}]")
     fc.append("".join(f"[a{k}]" for k in range(len(lines))) + f"concat=n={len(lines)}:v=0:a=1,highpass=f=80,"
               "acompressor=threshold=-20dB:ratio=2.5:attack=5:release=80,loudnorm=I=-16:TP=-2,"
-              "aresample=48000,aformat=channel_layouts=stereo[voice]")
+              f"aresample=48000,aformat=channel_layouts=stereo,adelay={int(INTRO * 1000)}:all=1[voice]")
     run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", ";".join(fc), "-map", "[voice]", str(B / "voice.wav")])
 
     # 4) 배경음악 (내레이션 나올 때 자동으로 작아짐) + 최종 음량 -14 LUFS

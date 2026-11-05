@@ -5,7 +5,8 @@
   - 주제: AI 데이터센터와 물·전기 사용 (미국 주민투표 41곳 중 1곳 빼고 반대)
   - 스타일: 참고 영상(리뷰엉이 "성게알은 사실 알이 아니다?") 형식
     - 상단 연두색 질문형 고정 제목, 가운데 영상 띠, 하단 말 맞춤 자막, 해요체 내레이션
-  - 다시 만들기: `cd ai-datacenter && python tts.py && python build.py`
+  - 다시 만들기: `cd ai-datacenter && python tts.py && python thumbnail.py && python build.py`
+  - 썸네일: 맨 앞 1초 (`thumbnail.py`, 문구는 script.json의 "thumbnail")
     (클립은 `assets/clips/pexels_dl.sh <ID> <이름>`으로 다시 받기, 음악은 incompetech에서 Investigations.mp3)
 - 영상 관련 스킬 설치: `.claude/skills/` (HyperFrames, watch, graphify, ECC 영상 스킬)
 
